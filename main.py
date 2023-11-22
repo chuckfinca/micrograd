@@ -21,9 +21,9 @@ class Operation(Enum):
         elif operation is Operation.TIMES:
             return value1 * value2
         elif operation is Operation.DIVIDED_BY:
+            if value2 == 0:
+                raise ValueError("Cannot divide by zero")
             return value1 / value2
-        # elif self is Operation.PLUS:
-        #     return value1 + value2
 
 
 class Value:
@@ -97,8 +97,10 @@ class Value:
 
         def _gradient_calculation():
             self.gradient_with_respect_to_loss += 1 / other.data * result.gradient_with_respect_to_loss
-            other.gradient_with_respect_to_loss += self.data * result.gradient_with_respect_to_loss
-# 2/3 == 2 * 1/3
+
+            # d / d-other = - a / b^2 (because a/b = a*b^-1)
+            other.gradient_with_respect_to_loss -= self.data / (other.data ** 2) * result.gradient_with_respect_to_loss
+
         result.calculate_child_gradients = _gradient_calculation
         return result
 
@@ -110,6 +112,7 @@ class Value:
         return new_label
 
     def __rmul__(self, other):
+        other = other if isinstance(other, Value) else Value(other, label=f"{other}")
         # reverse multiply
         # Handles the case: other.__mul__(self)
         # crashes because self.data is needed
@@ -119,11 +122,13 @@ class Value:
         return new_value
 
     def __radd__(self, other):
+        other = other if isinstance(other, Value) else Value(other, label=f"{other}")
         new_value = self + other
         new_value.label = f"{other.label}+{self.label}"
         return new_value
 
     def __rsub__(self, other):
+        other = other if isinstance(other, Value) else Value(other, label=f"{other}")
         new_value = (self - other) * -1
         new_value.label = f"{other.label}-{self.label}"
         return new_value
@@ -176,15 +181,15 @@ def topological_sort(value: Value) -> ['Value']:
 def forward_pass(value, value_to_update: 'Value' = None, h = None):
     topo: [Value] = topological_sort(value)
 
-    visited = set()
     # topo is sorted children to parents
     for v in topo:
-        if v.operation is not None and v not in visited:
+        if v.operation is not None:
             child1 = v.children[0]
             child2 = v.children[1]
             v.data = Operation.operate(v.operation, child1.data, child2.data)
             if v == value_to_update:
                 v.data += h
+
 
 def gradient_check(loss, value_to_update: 'Value', h):
     L1 = loss.data
@@ -198,121 +203,7 @@ def gradient_check(loss, value_to_update: 'Value', h):
 
     slope = (L2 - L1) / h
     print(slope)
-# class Neuron:
-#     def __init__(self):
 
-
-# def local_back_propagation(parent: Value):
-#     # we know the parent's local derivative at this point
-#     print(f"local_back_propagation for {parent}")
-#
-#     for child in parent.children:
-#         child: Value = child
-#
-#         if parent.operation == "+":
-#             # Add the children together to make the parent
-#             # child + child_2 = p
-#             # So the derivative of the parent with respect to the first child is
-#             # dp / d-child = 1
-#
-#             # dL/dp = parent.gradient_with_respect_to_loss
-#
-#             # dL/d-child = dL/dp * dp/d-child
-#             child.gradient_with_respect_to_loss += parent.gradient_with_respect_to_loss * 1
-#             print(f"        child.gradient = parent.gradient")
-#             # if parent.operation == "-":
-#             #     # Subtract the children to make the parent
-#             #     # child - child_2 = p
-#             #     # So the derivative of the parent with respect to the first child is
-#             #     # dp / d-child = 1
-#             #
-#             #     # dL/dp = parent.gradient_with_respect_to_loss
-#             #
-#             #     # dL/d-child = dL/dp * dp/d-child
-#             #     child.gradient_with_respect_to_loss += parent.gradient_with_respect_to_loss * 1
-#             #     print(f"        child.gradient = parent.gradient")
-#
-#         elif parent.operation == "*":
-#             # start at 1 since the derivative with respect to the child is 1 for the child term
-#             # child = p
-#             # dp / dc1 = 1
-#             derivative = 1
-#
-#             # Multiply the children together to determine the over all derivative with respect to a specific child
-#             # child * child_2 ... * child_n = p
-#             # So the derivative of the parent with respect to the child is
-#             # dp / d-child = child_2 ... * child_n
-#             for other_child in parent.children:
-#                 if other_child != child:
-#                     derivative *= other_child.data
-#
-#             # dL/d-child = dL/dp * dp/d-child
-#             child.gradient_with_respect_to_loss += parent.gradient_with_respect_to_loss * derivative
-#
-#         elif parent.operation == "tanh":
-#             # d/dx tanh(x) = 1 - tanh^2(x) = 1 - (tanh(x))^2
-#             # d-parent  / d-child = 1 - tanh(child) ** 2
-#             # remember that tanh(child) = parent.data
-#             child.gradient_with_respect_to_loss += 1 - parent.data ** 2
-#         else:
-#             raise ValueError("operation not defined")
-#
-#     for child in parent.children:
-#         local_back_propagation(child)
-
-
-def derivatives():
-    h = 0.0001
-
-    # inputs
-    a = 2.0
-    b = -3.0
-    c = 10.0
-
-    # f(x)
-    f_of_x = a*b + c
-
-    # derivative with respect to a (df/da)
-    # a += h
-
-    # derivative with respect to b (df/db)
-    # b += h
-
-    # derivative with respect to c (df/dc)
-    c += h
-
-    f_of_x_plus_h = a*b + c
-
-    print(f_of_x)
-    print(f_of_x_plus_h)
-
-    slope = (f_of_x_plus_h - f_of_x) / h
-    print(slope)
-
-def f(x):
-    return 3*x**2 - 4*x + 5
-
-def plot_array():
-    # a range from -5 to 5 with increment of 0.25
-    xs = numpy.arange(-5, 5, 0.25)
-    ys = f(xs)
-    print(ys)
-
-    # the amount to nudge x to the right
-    h = .001
-
-    xs_nudged_right = xs + h
-    ys_nudged_right = f(xs_nudged_right)
-    print(ys_nudged_right)
-
-    slope = (f(xs + h) - f(xs)) / h
-    print(slope)
-
-    # Setup the plot
-    matplotlib_pyplot.plot(xs, ys)
-
-    # Show the plot
-    matplotlib_pyplot.show()
 
 def trace(root):
     # builds a set of all nodes and edges in a graph
@@ -348,169 +239,7 @@ def draw_dot(root, file_name: str = None):
     return dot
 
 
-def gradient_point_check(value: Value, modified_value: Value, h: float):
-    print("gradient_point_check----------")
-    L = value
-    print(L)
-    L_children = list(value.children)
-    f = L_children[0]
-    print(f"f = {f}")
-    e = L_children[1]
-    print(f"e = {e}")
-
-    e_f = L.operation
-
-    if len(f.children) > 0:
-        f_children = list(f.children)
-        d = f_children[0]
-        c = f_children[1]
-        c_d = f.operation
-    elif len(e.children) > 0:
-        e_children = list(e.children)
-        d = e_children[0]
-        c = e_children[1]
-        c_d = e.operation
-    else:
-        print("drat")
-    print(f"c = {c}")
-    print(f"d = {d}")
-
-    if len(d.children) > 0:
-        d_children = list(d.children)
-        b = d_children[0]
-        a = d_children[1]
-        a_b = d.operation
-    elif len(c.children) > 0:
-        c_children = list(c.children)
-        b = c_children[0]
-        a = c_children[1]
-        a_b = c.operation
-    else:
-        print("dratt")
-    print(f"a = {a}")
-    print(f"b = {b}")
-
-    print("L:")
-    print(L)
-    L1 = L.data
-
-    for v in [a, b, c, d, e, f]:
-        if modified_value == v:
-            print("found ya!")
-            v.data += h
-
-    print("L_a:")
-    print(a)
-    print(b)
-    if a_b == "+":
-        d = a + b
-    else:
-        d = a * b
-    print(d)
-
-    if c_d == "+":
-        e = c + d
-    else:
-        e = c * d
-
-    if L.operation == "+":
-        L = e + f
-    else:
-        L = e * f
-
-    L2 = L.data
-
-    print(f"a = {a}")
-    print(f"b = {b}")
-    print(f"c = {c}")
-    print(f"d = {d}")
-    print(f"e = {e}")
-    print(f"f = {f}")
-    print(f"==-=-=-==")
-    print("L_o:")
-    print(value)
-    print("L:")
-    print(L)
-    print(L1)
-    print(L2)
-    print((L2 - L1) / h)
-
-
 if __name__ == '__main__':
-
-    # plot_array()
-    # derivatives()
-
-    # EXAMPLE for time ~45:00
-    # a = Value(2.0, (), "a")
-    # b = Value(-3.0, (), "b")
-    # c = Value(10.0, (), "c")
-    # d = a*b
-    # e = d+c
-    # f = Value(-2.0, (), "f")
-
-    # Loss function
-    # L = e*f
-    # L.back_propagation()
-
-    ## a += 0.01 * a.gradient_with_respect_to_loss
-    ## b += 0.01 * b.gradient_with_respect_to_loss
-    ## c += 0.01 * c.gradient_with_respect_to_loss
-    ## f += 0.01 * f.gradient_with_respect_to_loss
-
-    # print(a.data + 0.01 * a.gradient_with_respect_to_loss)
-    # print(b.data + 0.01 * b.gradient_with_respect_to_loss)
-    # print(c.data + 0.01 * c.gradient_with_respect_to_loss)
-    # print(f.data + 0.01 * f.gradient_with_respect_to_loss)
-    ## L.gradient = 1
-    ## L1 = L.data
-
-    ## h = 0.001
-    ## a = Value(2.0 + h, (), "a")
-    ## b = Value(-3.0, (), "b")
-    ## c = Value(10.0, (), "c")
-    ## d = a*b
-    ## e = d+c
-    ## f = Value(-2.0, (), "f")
-    ## L = e*f
-    ## L2 = L.data
-
-    ## derivative = (L2 - L1)/h
-
-    ## print(L1)
-    ## print(L2)
-    ## print(derivative)
-
-    #EXAMPLE for 56:23
-
-    # # inputs x1, x2
-    # x1 = Value(2.0, label="x1")
-    # x2 = Value(0.0, label="x2")
-    #
-    # # weights w1, w2
-    # w1 = Value(-3.0, label="w1")
-    # w2 = Value(1.0, label="w2")
-    #
-    # # bias of the neuron
-    # b = Value(6.8813735870195432, label="b")
-    #
-    # # x1w1 + x2w2 + b
-    # x1w1 = x1 * w1
-    # # x1w1.label = "x1w1"
-    #
-    # x2w2 = x2 * w2
-    # # x2w2.label = "x2w2"
-    #
-    # x1w1x2w2 = x1w1 + x2w2
-    # # x1w1x2w2.label = "x1w1 + x2w2"
-    #
-    # n = x1w1x2w2 + b
-    # n.label = "n"
-    # o = n.tanh()
-
-    # o.back_propagation()
-
-    # EXAMPLE for 56:23
 
     # inputs x1, x2
     a = Value(2.0, label="a")
