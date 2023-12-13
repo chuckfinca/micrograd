@@ -1,9 +1,9 @@
-import math
 from enum import Enum
 
 import matplotlib.pyplot as matplotlib_pyplot
 import numpy
 from graphviz import Digraph
+import torch
 
 
 class Operation(Enum):
@@ -11,6 +11,8 @@ class Operation(Enum):
     MINUS = "-"
     TIMES = "*"
     DIVIDED_BY = "/"
+    EXPONENT = "^"
+    TANH = "tanh"
 
     @staticmethod
     def operate(operation, value1, value2):
@@ -24,6 +26,8 @@ class Operation(Enum):
             if value2 == 0:
                 raise ValueError("Cannot divide by zero")
             return value1 / value2
+        elif operation is Operation.TANH:
+            return numpy.tanh(value1)
 
 
 class Value:
@@ -34,8 +38,10 @@ class Value:
 
         self._setup_label(label)
 
-        self.calculate_child_gradients = lambda: None
+        self._calculate_child_gradients = lambda: None
         # The gradient with respect to the loss function (dL/d-self)
+        # 'loss' will be the node on which back_propagation() will be called
+        # gradients accumulate, so they need to be initialized at 0
         self.gradient_with_respect_to_loss = 0.0
 
     def _setup_label(self, label):
@@ -60,7 +66,7 @@ class Value:
             self.gradient_with_respect_to_loss += 1 * result.gradient_with_respect_to_loss
             other.gradient_with_respect_to_loss += 1 * result.gradient_with_respect_to_loss
 
-        result.calculate_child_gradients = _gradient_calculation
+        result._calculate_child_gradients = _gradient_calculation
         return result
 
     def __sub__(self, other):
@@ -71,7 +77,7 @@ class Value:
             self.gradient_with_respect_to_loss += 1 * result.gradient_with_respect_to_loss
             other.gradient_with_respect_to_loss += -1 * result.gradient_with_respect_to_loss
 
-        result.calculate_child_gradients = _gradient_calculation
+        result._calculate_child_gradients = _gradient_calculation
         return result
 
 
@@ -88,7 +94,7 @@ class Value:
             other.gradient_with_respect_to_loss += self.data * result.gradient_with_respect_to_loss
 
         # during backprop the parent (i.e. "new_value") sets the children's gradients
-        result.calculate_child_gradients = _gradient_calculation
+        result._calculate_child_gradients = _gradient_calculation
         return result
 
     def __truediv__(self, other):
@@ -101,7 +107,7 @@ class Value:
             # d / d-other = - a / b^2 (because a/b = a*b^-1)
             other.gradient_with_respect_to_loss -= self.data / (other.data ** 2) * result.gradient_with_respect_to_loss
 
-        result.calculate_child_gradients = _gradient_calculation
+        result._calculate_child_gradients = _gradient_calculation
         return result
 
     def _label(self, other, operator: Operation) -> str:
@@ -133,33 +139,73 @@ class Value:
         new_value.label = f"{other.label}-{self.label}"
         return new_value
 
-    def tanh(self):
-        x = self.data
-        t = (math.exp(2*x) - 1) / (math.exp(2*x) + 1)
-        # (self, ) means that self is the only child of the new tanh Value object
-        return Value(t, (self, ), "tanh")
+    def exp(self, other):
+        other = other if isinstance(other, Value) else Value(other, label=f"{other}")
 
-    def gradient_descent(self, step_size):
+        # the result is the parent during back prop
+        result = Value(self.data ** other.data, (self, other), Operation.EXPONENT)
+
+        def _gradient_calculation():
+            # since this is in a block the new_value.gradient_with_respect_to_loss
+            # isn't called until it is calculated.
+
+            if self.data < 0:
+                raise ValueError("Negative base not supported for logarithm in derivative calculation.")
+                # Or, if using absolute value:
+                # log_term = numpy.log(abs(self.data))
+            else:
+                log_term = numpy.log(self.data)
+
+            # d / d-other = b * a ^ (b-1) (because the derivative of a/b with respect to a is a*b^-1)
+            self.gradient_with_respect_to_loss += other.data * self.data ** (other.data - 1)
+
+            # d / d-other = a^b * log(a) (because the derivative of a/b with respect to b is a^b*log(a) )
+            other.gradient_with_respect_to_loss += self.data ** other.data * log_term
+
+        # during backprop the parent (i.e. "result") sets the children's gradients
+        result._calculate_child_gradients = _gradient_calculation
+        return result
+
+    def tanh(self, label):
+        # y = (e^2x - 1) / (e^2x + 1)
+        x = self.data
+        y = (numpy.e ** (2 * x) - 1) / (numpy.e ** (2 * x) + 1)
+
+        # the result is the parent during back prop
+        result = Value(y, (self, ), Operation.TANH, label)
+
+        def _gradient_calculation():
+            # since this is in a block the new_value.gradient_with_respect_to_loss
+            # isn't called until it is calculated.
+
+            # dd / dx = 1 - tanh(x)^2
+            self.gradient_with_respect_to_loss += 1 - result.data ** 2
+
+        # during backprop the parent (i.e. "result") sets the children's gradients
+        result._calculate_child_gradients = _gradient_calculation
+        return result
+
+    def _gradient_descent(self, step_size):
         self.data += step_size * self.gradient_with_respect_to_loss
 
 
-def back_propagation(loss: Value, perform_gradient_descent: bool):
-    # Initialize the gradient of the loss function as 1
-    loss.gradient_with_respect_to_loss = 1
+    def back_propagation(self, perform_gradient_descent: bool):
+        # Initialize the gradient of the loss function as 1
+        self.gradient_with_respect_to_loss = 1
 
-    # Backpropagation: iterate over the graph in reverse (from outputs to inputs)
+        # Backpropagation: iterate over the graph in reverse (from outputs to inputs)
 
-    # Sort the graph in topological order to ensure proper gradient propagation
-    # Essential for correctly applying the chain rule in backpropagation.
-    topologically_sorted_graph = topological_sort(loss)
+        # Sort the graph in topological order to ensure proper gradient propagation
+        # Essential for correctly applying the chain rule in backpropagation.
+        topologically_sorted_graph = topological_sort(self)
 
-    # At each node, apply the chain rule to calculate and accumulate gradients.
-    for node in reversed(topologically_sorted_graph):
-        node.calculate_child_gradients()
+        # At each node, apply the chain rule to calculate and accumulate gradients.
+        for node in reversed(topologically_sorted_graph):
+            node._calculate_child_gradients()
 
-        if perform_gradient_descent and node is not loss:
-            # gradient descent
-            node.gradient_descent(step_size=0.001)
+            if perform_gradient_descent and node is not self:
+                # gradient descent
+                node._gradient_descent(step_size=0.001)
 
 
 def topological_sort(value: Value) -> ['Value']:
@@ -197,7 +243,7 @@ def gradient_check(loss, value_to_update: 'Value', h):
     value_to_update.data += h
 
     forward_pass(loss, value_to_update, h)
-    back_propagation(loss, perform_gradient_descent=False)
+    loss.back_propagation(perform_gradient_descent=False)
 
     L2 = loss.data
 
@@ -238,28 +284,92 @@ def draw_dot(root, file_name: str = None):
 
     return dot
 
+def torch_time():
+    x1 = torch.Tensor([2.0])
+    x1.requires_grad = True
+
+    x2 = torch.Tensor([0.0])
+    x2.requires_grad = True
+
+    w1 = torch.Tensor([-3.0])
+    w1.requires_grad = True
+
+    w2 = torch.Tensor([1.0])
+    w2.requires_grad = True
+
+    b = torch.Tensor([6.881373587])
+    b.requires_grad = True
+
+    n = x1*w1 + x2*w2 + b
+    o = torch.tanh(n)
+
+    print(o.data.item())
+
+    o.backward()
+    print('----')
+    print('x2', x2.grad.item())
+    print('x1', x1.grad.item())
+    print('w2', w2.grad.item())
+    print('w1', w1.grad.item())
+
 
 if __name__ == '__main__':
 
+    # NEURON EXAMPLE @ 56min
+
     # inputs x1, x2
-    a = Value(2.0, label="a")
-    b = Value(-3.0, label="b")
-    c = Value(10.0, label="c")
-    e = a * b; e.label = "e"
-    d = e + c; d.label = "d"
-    f = Value(-2.0, label="f")
-    L = d * f; L.label = "L"
+    x1 = Value(2.0, label="x1")
+    x2 = Value(0.0, label="x2")
 
-    back_propagation(L, perform_gradient_descent=False)
-    draw_dot(L).view()
+    # weights w1, w2
+    w1 = Value(-3.0, label="w1")
+    w2 =  Value(1.0, label="w=2")
 
-    back_propagation(L, perform_gradient_descent=True)
-    forward_pass(L)
+    # bias of the neuron (trigger happiness)
+    b = Value(6.881373587, label = 'b')
 
-    back_propagation(L, perform_gradient_descent=True)
-    forward_pass(L)
+    # x1*w1 + x2*w2 + b
+
+    x1w1 = x1 * w1
+    x1w1.label = 'x1*w1'
+    x2w2 = x2 * w2
+    x2w2.label = 'x2*w2'
+    x1w1x2w2 = x1w1 + x2w2
+    # x1w1x2w2.label = 'x1w1 + x2w2'
+    n = x1w1x2w2 + b
+    n.label = 'n'
+
+    o = n.tanh("o")
+
+    o.back_propagation(False)
+
+    draw_dot(o).view()
+
+    torch_time()
+
+    # next up, 57:09 add tanh to the neuron
+
+    # # INITIAL EXAMPLE @ ~45min
+    #
+    # # inputs x1, x2
+    # a = Value(2.0, label="a")
+    # b = Value(-3.0, label="b")
+    # c = Value(10.0, label="c")
+    # e = a * b; e.label = "e"
+    # d = e + c; d.label = "d"
+    # f = Value(-2.0, label="f")
+    # L = d * f; L.label = "L"
+    #
+    # # running back prop without performing gradient descent causes gradients to get added to the Values
+    # # back_propagation(L, perform_gradient_descent=False)
+    # draw_dot(L).view()
+    # #
+    # # back_propagation(L, perform_gradient_descent=True)
+    # # forward_pass(L)
+    # #
+    # # back_propagation(L, perform_gradient_descent=True)
+    # # forward_pass(L)
     # h = 0.001
-    # gradient_check(L, d, h)
-
-    draw_dot(L, "Divgraph2.gv").view()
-    # gradient_point_check(L, a, 0.0001)
+    # gradient_check(L, b, h)
+    #
+    # # draw_dot(L, "Divgraph2.gv").view()
