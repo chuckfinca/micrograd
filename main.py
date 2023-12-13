@@ -1,9 +1,70 @@
+import random
 from enum import Enum
 
 import matplotlib.pyplot as matplotlib_pyplot
 import numpy
 from graphviz import Digraph
 import torch
+
+def single_neuron_example():
+    # NEURON EXAMPLE @ 56min
+
+    # inputs x1, x2
+    x1 = Value(2.0, label="x1")
+    x2 = Value(0.0, label="x2")
+
+    # weights w1, w2
+    w1 = Value(-3.0, label="w1")
+    w2 = Value(1.0, label="w=2")
+
+    # bias of the neuron (trigger happiness)
+    b = Value(6.881373587, label='b')
+
+    # x1*w1 + x2*w2 + b
+
+    x1w1 = x1 * w1
+    x1w1.label = 'x1*w1'
+    x2w2 = x2 * w2
+    x2w2.label = 'x2*w2'
+    x1w1x2w2 = x1w1 + x2w2
+    # x1w1x2w2.label = 'x1w1 + x2w2'
+    n = x1w1x2w2 + b
+    n.label = 'n'
+
+    o = n.tanh("o")
+
+    o.back_propagation(False)
+
+    draw_dot(o).view()
+
+    torch_time()
+
+
+def initial_example():
+    # INITIAL EXAMPLE @ ~45min
+
+    # inputs x1, x2
+    a = Value(2.0, label="a")
+    b = Value(-3.0, label="b")
+    c = Value(10.0, label="c")
+    e = a * b; e.label = "e"
+    d = e + c; d.label = "d"
+    f = Value(-2.0, label="f")
+    L = d * f; L.label = "L"
+
+    # running back prop without performing gradient descent causes gradients to get added to the Values
+    # back_propagation(L, perform_gradient_descent=False)
+    draw_dot(L).view()
+    #
+    # back_propagation(L, perform_gradient_descent=True)
+    # forward_pass(L)
+    #
+    # back_propagation(L, perform_gradient_descent=True)
+    # forward_pass(L)
+    h = 0.001
+    gradient_check(L, b, h)
+
+    # draw_dot(L, "Divgraph2.gv").view()
 
 
 class Operation(Enum):
@@ -13,21 +74,30 @@ class Operation(Enum):
     DIVIDED_BY = "/"
     EXPONENT = "^"
     TANH = "tanh"
+    SUM = "sum"
 
     @staticmethod
-    def operate(operation, value1, value2):
-        if operation is Operation.PLUS:
-            return value1 + value2
-        elif operation is Operation.MINUS:
-            return value1 - value2
-        elif operation is Operation.TIMES:
-            return value1 * value2
-        elif operation is Operation.DIVIDED_BY:
-            if value2 == 0:
-                raise ValueError("Cannot divide by zero")
-            return value1 / value2
+    def operate(operation, values: list):
+        if len(values) == 2:
+            if operation is Operation.PLUS:
+                return values[0] + values[1]
+            elif operation is Operation.MINUS:
+                return values[0] - values[1]
+            elif operation is Operation.TIMES:
+                return values[0] * values[1]
+            elif operation is Operation.DIVIDED_BY:
+                if values[1] == 0:
+                    raise ValueError("Cannot divide by zero")
+                return values[0] / values[1]
         elif operation is Operation.TANH:
-            return numpy.tanh(value1)
+            return numpy.tanh(values[0])
+        elif operation is Operation.SUM:
+            return sum(values)
+        else:
+            raise ValueError("Cannot divide by zero")
+
+
+
 
 
 class Value:
@@ -166,7 +236,7 @@ class Value:
         result._calculate_child_gradients = _gradient_calculation
         return result
 
-    def tanh(self, label):
+    def tanh(self, label=None):
         # y = (e^2x - 1) / (e^2x + 1)
         x = self.data
         y = (numpy.e ** (2 * x) - 1) / (numpy.e ** (2 * x) + 1)
@@ -313,63 +383,87 @@ def torch_time():
     print('w1', w1.grad.item())
 
 
+class Neuron:
+
+    def __init__(self, inputs):
+        # initialize n weights as random numbers between -1 and 1
+        # where n is the number of inputs
+        self.weights = [Value(random.uniform(-1,1), label=f"w{i}") for i in range(inputs)]
+        self.b = Value(random.uniform(-1,1), label="b")
+
+    def __call__(self, inputs):
+        # w * x + b
+
+        zipped_weights_and_input = zip(self.weights, inputs)
+        stimulation = self.b.data
+        children = [self.b]
+        for weight, input_x in zipped_weights_and_input:
+            input_x = input_x if isinstance(input_x, Value) else Value(input_x, label=f"{input_x}")
+            stimulation_by_single_input = weight * input_x
+            stimulation += stimulation_by_single_input.data
+            children.append(stimulation_by_single_input)
+
+        activation = Value(stimulation, children=tuple(children), operation=Operation.SUM, label="stimulation")
+
+        def _gradient_calculation():
+            for child in children:
+                child.gradient_with_respect_to_loss += 1 * activation.gradient_with_respect_to_loss
+
+        activation._calculate_child_gradients = _gradient_calculation
+        print(activation)
+
+        out = activation.tanh()
+        out.label = "activation"
+        print(out)
+        return out
+
+
+class FullyConnectedLayer:
+
+    def __init__(self, number_of_inputs_to_layer, neurons_in_layer):
+        self.neurons = [Neuron(number_of_inputs_to_layer) for _ in range(neurons_in_layer)]
+
+    def __call__(self, x_input_to_layer):
+        outs = []
+        for neuron in self.neurons:
+            neuron_output = neuron(x_input_to_layer)
+            outs.append(neuron_output)
+        return outs[0] if len(outs) == 1 else outs
+
+
+class MultilayerPerceptron:
+
+    def __init__(self, number_of_inputs, list_of_layer_output_dimensions):
+
+        # layers will live in between the items in the array
+        edges_between_layers = [number_of_inputs] + list_of_layer_output_dimensions
+
+        self.layers = []
+        # the layers are a list of input -> output pairs for that layer
+        for i in range(len(list_of_layer_output_dimensions)):
+            layer_input_size = edges_between_layers[i]
+            layer_output_size = edges_between_layers[i+1]
+            fully_connected_layer = FullyConnectedLayer(layer_input_size, layer_output_size)
+            self.layers.append(fully_connected_layer)
+
+    def __call__(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
 if __name__ == '__main__':
 
-    # NEURON EXAMPLE @ 56min
+    x = [2.0, 3.0, -1.0]
+    # neuron = Neuron(3)
+    # out = neuron(x)
+    # draw_dot(out).view()
 
-    # inputs x1, x2
-    x1 = Value(2.0, label="x1")
-    x2 = Value(0.0, label="x2")
+    mlp = MultilayerPerceptron(3,[4, 4, 1])
+    out = mlp(x)
+    print(out)
+    out.back_propagation(False)
+    draw_dot(out).view()
 
-    # weights w1, w2
-    w1 = Value(-3.0, label="w1")
-    w2 =  Value(1.0, label="w=2")
 
-    # bias of the neuron (trigger happiness)
-    b = Value(6.881373587, label = 'b')
 
-    # x1*w1 + x2*w2 + b
-
-    x1w1 = x1 * w1
-    x1w1.label = 'x1*w1'
-    x2w2 = x2 * w2
-    x2w2.label = 'x2*w2'
-    x1w1x2w2 = x1w1 + x2w2
-    # x1w1x2w2.label = 'x1w1 + x2w2'
-    n = x1w1x2w2 + b
-    n.label = 'n'
-
-    o = n.tanh("o")
-
-    o.back_propagation(False)
-
-    draw_dot(o).view()
-
-    torch_time()
-
-    # next up, 57:09 add tanh to the neuron
-
-    # # INITIAL EXAMPLE @ ~45min
-    #
-    # # inputs x1, x2
-    # a = Value(2.0, label="a")
-    # b = Value(-3.0, label="b")
-    # c = Value(10.0, label="c")
-    # e = a * b; e.label = "e"
-    # d = e + c; d.label = "d"
-    # f = Value(-2.0, label="f")
-    # L = d * f; L.label = "L"
-    #
-    # # running back prop without performing gradient descent causes gradients to get added to the Values
-    # # back_propagation(L, perform_gradient_descent=False)
-    # draw_dot(L).view()
-    # #
-    # # back_propagation(L, perform_gradient_descent=True)
-    # # forward_pass(L)
-    # #
-    # # back_propagation(L, perform_gradient_descent=True)
-    # # forward_pass(L)
-    # h = 0.001
-    # gradient_check(L, b, h)
-    #
-    # # draw_dot(L, "Divgraph2.gv").view()
