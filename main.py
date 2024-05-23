@@ -403,7 +403,7 @@ class Neuron:
             stimulation += stimulation_by_single_input.data
             children.append(stimulation_by_single_input)
 
-        activation = Value(stimulation, children=tuple(children), operation=Operation.SUM, label="stimulation")
+        activation = Value(stimulation, children=tuple(children), operation=Operation.SUM, label="cell body stimulation")
 
         def _gradient_calculation():
             for child in children:
@@ -431,7 +431,7 @@ class FullyConnectedLayer:
         return outs[0] if len(outs) == 1 else outs
 
 
-class MultilayerPerceptron:
+class MultilayerFullyConnectedNetwork:
 
     def __init__(self, number_of_inputs, list_of_layer_output_dimensions):
 
@@ -452,18 +452,24 @@ class MultilayerPerceptron:
         return x
 
 
+
 if __name__ == '__main__':
 
-    x = [2.0, 3.0, -1.0]
-    # neuron = Neuron(3)
-    # out = neuron(x)
-    # draw_dot(out).view()
+    # layer1 = torch.nn.Linear(in_features=4, out_features=4)
+    # layer2 = torch.nn.Linear(in_features=4, out_features=1)
+    # neural_network = torch.nn.Sequential(
+    #     layer1,
+    #     layer2
+    # )
+    #
+    # print(neural_network)
+    # layer1.t
 
-    mlp = MultilayerPerceptron(3,[4, 4, 1])
-    out = mlp(x)
+    x = [2.0, 3.0, -1.0]
+
+    mlfcn = MultilayerFullyConnectedNetwork(3, [4, 4, 1])
+    out = mlfcn(x)
     print(out)
     out.back_propagation(False)
     draw_dot(out).view()
-
-
 
