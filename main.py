@@ -6,6 +6,13 @@ import numpy
 from graphviz import Digraph
 import torch
 
+# Setup README.md generation
+import os
+from readme_generator import update_setup_and_run
+script_path = os.path.abspath(__file__)
+update_setup_and_run(script_path)
+
+
 def single_neuron_example():
     # NEURON EXAMPLE @ 56min
 
