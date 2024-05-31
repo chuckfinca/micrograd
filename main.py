@@ -1,17 +1,27 @@
 import random
 from enum import Enum
 
-import matplotlib.pyplot as matplotlib_pyplot
 import numpy
 from graphviz import Digraph
-import torch
 
 # Setup README.md generation
 import os
-from readme_generator import update_setup_and_run
-script_path = os.path.abspath(__file__)
-update_setup_and_run(script_path)
+import readme_ation
 
+readme_path = 'README.md'
+project_details = {
+    'overview': "This project involves building a neural network from scratch inspired by Andrej Karpathy's video [\"The spelled-out intro to neural networks and backpropagation: building micrograd\"](https://www.youtube.com/watch?v=VMj-3S1tku0). The primary goal was to deepen my understanding of neural networks, backpropagation, and gradient descent by implementing these concepts manually.",
+    'motivation': "Prior to pursuing my master's in ML/AI, my knowledge was primarily derived from several Coursera courses on machine learning and readings from Twitter. I sought a practical project to solidify this theoretical foundation. Karpathy's tutorial provided an excellent starting point due to his expertise and clear explanations.",
+    'technologies': "- **Python**: Core programming language.\n- **NumPy**: For numerical operations and data handling.\n- **Graphviz**: For visualizing neural networks, weights, and gradients.",
+    'approach': "1. **Learning by Doing**: Followed Karpathy’s tutorial, then independently implemented and expanded upon his concepts.\n2. **Extended Operations**: Added additional operations such as `tanh` to the neural network.\n3. **Commenting and Documentation**: Emphasized writing clear comments to aid future understanding and reinforce learning.\n4. **Custom Neuron Objects**: Implemented a `Neuron` class to simulate action potentials, though later realized `ReLU` serves this purpose in traditional neural networks.",
+    'challenges': "- **Labeling System**: Attempted to implement a comprehensive labeling system, which proved impractical for larger networks.\n- **Understanding ReLU**: Initially misunderstood the role of `ReLU`, leading to an unnecessary `Neuron` class.\n- **Practical Application**: Applied the network to a Kaggle competition task, achieving 55% accuracy (basically chance), highlighting the need for further refinement and understanding.",
+    'key_takeaways': "- **Hands-On Experience**: Building a neural network from scratch provided deep insights into the mechanics of neural networks.\n- **Importance of Iteration**: Recognized the importance of iterative learning and continuous improvement.\n- **Foundation for Future Projects**: The experience laid a solid foundation for more complex machine learning projects.",
+    'acknowledgments': "Special thanks to Andrej Karpathy for his [invaluable tutorial](https://www.youtube.com/watch?v=VMj-3S1tku0), which guided the development of this project."
+}
+readme_ation.add_project_description(readme_path, project_details)
+
+script_path = os.path.abspath(__file__)
+readme_ation.add_setup_with_versions([script_path], readme_path)
 
 def single_neuron_example():
     # NEURON EXAMPLE @ 56min
@@ -361,34 +371,6 @@ def draw_dot(root, file_name: str = None):
 
     return dot
 
-def torch_time():
-    x1 = torch.Tensor([2.0])
-    x1.requires_grad = True
-
-    x2 = torch.Tensor([0.0])
-    x2.requires_grad = True
-
-    w1 = torch.Tensor([-3.0])
-    w1.requires_grad = True
-
-    w2 = torch.Tensor([1.0])
-    w2.requires_grad = True
-
-    b = torch.Tensor([6.881373587])
-    b.requires_grad = True
-
-    n = x1*w1 + x2*w2 + b
-    o = torch.tanh(n)
-
-    print(o.data.item())
-
-    o.backward()
-    print('----')
-    print('x2', x2.grad.item())
-    print('x1', x1.grad.item())
-    print('w2', w2.grad.item())
-    print('w1', w1.grad.item())
-
 
 class Neuron:
 
@@ -461,16 +443,6 @@ class MultilayerFullyConnectedNetwork:
 
 
 if __name__ == '__main__':
-
-    # layer1 = torch.nn.Linear(in_features=4, out_features=4)
-    # layer2 = torch.nn.Linear(in_features=4, out_features=1)
-    # neural_network = torch.nn.Sequential(
-    #     layer1,
-    #     layer2
-    # )
-    #
-    # print(neural_network)
-    # layer1.t
 
     x = [2.0, 3.0, -1.0]
 
